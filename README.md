@@ -24,6 +24,7 @@ meta-ninja is being run. Here's an example:
   ; name of the target
   (name      "slasher")
   ; type: executable, shared-object or archive
+  ; this currently doesn't do anything
   (type      executable)
   ; source folder
   (sources   ("src")))
@@ -49,3 +50,11 @@ rule link
 build slasher: link $build_dir/src/main.o
 build $build_dir/src/main.o: compile src/main.cc
 ```
+
+Usage
+=====
+
+The nice thing is, that `meta-ninja` is small enough to distribute along
+with a project. Most GNU systems come with a packaged version of Guile.
+The idea is that project files should remain tiny; I have no intention of
+reinventing CMake. Still, if you add some cool features, please let me know.
