@@ -1,0 +1,162 @@
+#!guile
+ !#
+
+#| Ninja Meta-build System
+ | =======================
+ |#
+
+(import (rnrs (6))
+        (srfi srfi-26)
+        (only (srfi srfi-1) append-map unfold fold)
+        (ice-9 format)
+        (ice-9 popen)
+        (ice-9 ftw)
+        (ice-9 regex)
+        (ice-9 match))
+
+(define-syntax assuming
+  (syntax-rules ()
+    ((_ (<formal>) <call> <expr> ...)
+     (let ((<formal> <call>))
+       (if <formal>
+         (begin <expr> ...)
+         #f)))
+
+    ((_ (<formals> ...) <call> <expr> ...)
+     (call-with-values
+       (lambda () <call>)
+       (case-lambda
+         ((x) #f)
+         ((<formals> ...) <expr> ...))))))
+
+(define (make-dict table)
+  #| Create a callable dictionary from a nested alist. |#
+  (lambda (entry . args)
+    (let ((value (assuming (pair) (assq entry table)
+                           (cdr pair))))
+      (cond
+        ((not value) #f)
+        ((null? args) value) ; (if (null? (cdr value)) (car value) value))
+        (else (apply (car value) args))))))
+
+(define-syntax dict
+  #| Syntax for creating a dictionary object. |#
+  (syntax-rules ()
+    ((_ (<symbol> <values> ...) ...)
+     (let ((table `((<symbol> (unquote <values>) ...) ...)))
+       (make-dict table)))))
+
+(define (has-extension ext filename)
+  (let ((split (string-tokenize filename
+                                (char-set-complement (char-set #\.)))))
+    (if (not (null? split))
+      (equal? (car (last-pair split)) ext)
+      #f)))
+
+(define (search-sources sources extension)
+  (define (ignore path stat result)
+    result)
+
+  (define (not-hidden? path stat result)
+    (not (string-match "\\.[^\\./].*" (basename path))))
+
+  (define (add-file path stat result)
+    (if (has-extension extension (basename path))
+      (cons path result)
+      result))
+
+  (define (on-error path stat errno result)
+    (format (current-error-port) "warning: ~a: ~a~%"
+            name (strerror errno))
+    result)
+
+  (append-map
+    (cut file-system-fold
+         not-hidden? add-file ignore ignore ignore on-error '() <>)
+    sources))
+
+(define (object-filename fn ext)
+  (let ((dir  (dirname fn))
+        (base (basename fn ext)))
+    (format #f "~a/~ao" dir base)))
+
+(define lines
+  (case-lambda
+    (()     "")
+    ((item) (cond
+              ((string? item) item)
+              ((pair? item) (apply lines item))))
+    (items  (string-join (map lines items) "\n"))))
+
+(define (perhaps str)
+  (if (not str) "" str))
+
+(define (pkg-config cmd libs)
+  (if (not libs)
+    #f
+    (let* ((port (open-input-pipe (format #f "pkg-config --~a ~a"
+                                          cmd (string-join libs " "))))
+           (str  (get-line port)))
+      (close-pipe port)
+      str)))
+
+(define-record-type project
+  (fields settings targets))
+
+(define (create-build.ninja project)
+  (let* ((cfg         (project-settings project))
+         (lib-cflags  (pkg-config 'cflags (cfg 'libraries)))
+         (lib-ldflags (pkg-config 'libs   (cfg 'libraries))))
+    (lines
+      (format #f "cflags = ~a ~a" (perhaps lib-cflags) (perhaps (cfg 'cflags)))
+      (format #f "ldflags = ~a ~a" (perhaps lib-ldflags) (perhaps (cfg 'ldflags)))
+      (map (lambda (a)
+             (format #f "~s = ~a" a (cfg a)))
+           '(compiler build_dir))
+      ""
+      "rule compile"
+      "  depfile = $out.d"
+      "  command = $compiler -MMD -MF $out.d $cflags -c $in -o $out"
+      "  description = COMPILING $out"
+      ""
+      "rule link"
+      "  command = $compiler $ldflags $in -o $out"
+      "  description = LINKING $out"
+      ""
+      (map (lambda (target)
+             (let* ((sources (search-sources (target 'sources) (cfg 'extension)))
+                    (objects (map (cut object-filename <> (cfg 'extension)) sources)))
+               (cons
+                 (format #f "build ~a: link ~a"
+                         (target 'name)
+                         (string-join (map (cut format #f "$build_dir/~a" <>) objects) " "))
+                 (map (lambda (src obj)
+                        (format #f "build $build_dir/~a: compile ~a" obj src))
+                      sources objects))))
+           (project-targets project))
+      "")))
+
+(define (read-input)
+  (let* ((in-port (open-file-input-port "project.scm"))
+         (exprs   (unfold port-eof? read identity in-port)))
+
+    (define (parse expr project)
+      (match expr
+        (('settings (arg value) ...)
+         (make-project
+           (make-dict (map cons arg value))
+           (project-targets project)))
+        (('target (arg value) ...)
+         (make-project
+           (project-settings project)
+           (cons (make-dict (map cons arg value))
+                 (project-targets project))))
+        (other project)))
+
+    (fold parse (make-project '() '()) exprs)))
+
+(let ((out-port (open-file-output-port "build.ninja" (file-options no-fail))))
+  (put-string out-port (create-build.ninja (read-input)))
+  (close-port out-port))
+
+; vim:ft=scheme:expandtab:ts=2:sw=2
