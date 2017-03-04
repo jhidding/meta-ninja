@@ -1,4 +1,4 @@
-#!guile
+#!/usr/bin/guile2
  !#
 
 #| Ninja Meta-build System
@@ -67,7 +67,7 @@
 
   (define (on-error path stat errno result)
     (format (current-error-port) "warning: ~a: ~a~%"
-            name (strerror errno))
+            path (strerror errno))
     result)
 
   (append-map
