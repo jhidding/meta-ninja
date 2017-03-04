@@ -15,6 +15,7 @@
         (ice-9 match))
 
 (define-syntax assuming
+  #| Evaluates body if formal(s) are not false |#
   (syntax-rules ()
     ((_ (<formal>) <call> <expr> ...)
      (let ((<formal> <call>))
@@ -30,7 +31,7 @@
          ((<formals> ...) <expr> ...))))))
 
 (define (make-dict table)
-  #| Create a callable dictionary from a nested alist. |#
+  #| Create a callable dictionary from an alist. |#
   (lambda (entry . args)
     (let ((value (assuming (pair) (assq entry table)
                            (cdr pair))))
@@ -47,6 +48,7 @@
        (make-dict table)))))
 
 (define (has-extension ext filename)
+  #| Check if file has the correct extension. |#
   (let ((split (string-tokenize filename
                                 (char-set-complement (char-set #\.)))))
     (if (not (null? split))
@@ -54,6 +56,7 @@
       #f)))
 
 (define (search-sources sources extension)
+  #| Walk file tree for source files |#
   (define (ignore path stat result)
     result)
 
@@ -76,11 +79,13 @@
     sources))
 
 (define (object-filename fn ext)
+  #| Get object filename, given source filename. |#
   (let ((dir  (dirname fn))
         (base (basename fn ext)))
     (format #f "~a/~ao" dir base)))
 
 (define lines
+  #| Join lines into single multi-line string. |#
   (case-lambda
     (()     "")
     ((item) (cond
@@ -89,9 +94,11 @@
     (items  (string-join (map lines items) "\n"))))
 
 (define (perhaps str)
+  #| Replace #f with empty string. |#
   (if (not str) "" str))
 
 (define (pkg-config cmd libs)
+  #| Run `pkg-config`. |#
   (if (not libs)
     #f
     (let* ((port (open-input-pipe (format #f "pkg-config --~a ~a"
@@ -104,6 +111,7 @@
   (fields settings targets))
 
 (define (create-build.ninja project)
+  #| Create the build-ninja file from project input. |#
   (let* ((cfg         (project-settings project))
          (lib-cflags  (pkg-config 'cflags (cfg 'libraries)))
          (lib-ldflags (pkg-config 'libs   (cfg 'libraries))))
@@ -137,6 +145,7 @@
       "")))
 
 (define (read-input)
+  #| Read input from `project.scm`, and parse it to data structure. |#
   (let* ((in-port (open-file-input-port "project.scm"))
          (exprs   (unfold port-eof? read identity in-port)))
 
