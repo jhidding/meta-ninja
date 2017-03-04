@@ -29,3 +29,23 @@ meta-ninja is being run. Here's an example:
   (sources   ("src")))
 ```
 
+The `slasher` project contains only one source file, giving the output in `build.ninja`:
+
+```ninja
+cflags = -D_GNU_SOURCE -pthread -I/usr/include/guile/2.0 -O3 -Wall
+ldflags = -lncurses -ltinfo -lguile-2.0 -lgc 
+compiler = g++
+build_dir = build
+
+rule compile
+  depfile = $out.d
+  command = $compiler -MMD -MF $out.d $cflags -c $in -o $out
+  description = COMPILING $out
+
+rule link
+  command = $compiler $ldflags $in -o $out
+  description = LINKING $out
+
+build slasher: link $build_dir/src/main.o
+build $build_dir/src/main.o: compile src/main.cc
+```
